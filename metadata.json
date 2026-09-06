@@ -1,0 +1,8 @@
+{
+  "name": "WealthTrack",
+  "description": "A professional portfolio tracker with real-time NSE data, automated MF SIP engine, AI-powered scanning, and capital aging analysis.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,243 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 0. Global Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 0.1 Primitives
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { 
+      return isSignedIn() && 
+             request.auth.token.get('email_verified', false) == true &&
+             request.auth.token.get('email', '').matches('(?i)souravsajeevan2001@gmail.com');
+    }
+    function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    // 1. Validation Helpers
+    function isValidTrade(data) {
+      return data.keys().hasAll(['stockName', 'stockSymbol', 'entryDate', 'entryPrice', 'quantity', 'status', 'uid']) &&
+             data.stockName is string && data.stockName.size() <= 200 &&
+             data.stockSymbol is string && data.stockSymbol.size() <= 30 &&
+             data.entryDate is string && data.entryDate.size() <= 30 &&
+             data.entryPrice is number && data.entryPrice >= 0 &&
+             data.quantity is number && data.quantity >= 0 &&
+             data.status in ['Active', 'Sold', 'Pending Link'] &&
+             data.uid == request.auth.uid &&
+             (!('type' in data) || data.type is string) &&
+             (!('marketCap' in data) || data.marketCap is string) &&
+             (!('broker' in data) || data.broker is string && data.broker.size() <= 150) &&
+             (!('symbol' in data) || data.symbol is string) &&
+             (!('stock' in data) || data.stock is string);
+    }
+
+    function isValidLedger(data) {
+      return data.keys().hasAll(['date', 'broker', 'amount', 'type', 'uid']) &&
+             data.date is string && data.date.size() <= 20 &&
+             data.broker is string && data.broker.size() <= 100 &&
+             (data.amount is number || data.amount is int || data.amount is float) && data.amount >= 0 &&
+             data.type in ['Deposit', 'Withdrawal'] &&
+             data.uid == request.auth.uid;
+    }
+
+    function isValidDividend(data) {
+      return data.keys().hasAll(['stockName', 'month', 'amount', 'uid']) &&
+             data.stockName is string && data.stockName.size() <= 200 &&
+             data.month is string && data.month.size() <= 20 &&
+             (data.amount is number || data.amount is int || data.amount is float) && data.amount >= 0 &&
+             data.uid == request.auth.uid;
+    }
+
+    function isValidBond(data) {
+      return data.keys().hasAll(['name', 'principal', 'interestRate', 'frequency', 'purchaseDate', 'uid']) &&
+             data.name is string && data.name.size() <= 200 &&
+             (data.principal is number || data.principal is int || data.principal is float) && data.principal >= 0 &&
+             (data.interestRate is number || data.interestRate is int || data.interestRate is float) && data.interestRate >= 0 &&
+             data.frequency in ['Monthly', 'Quarterly', 'Semi-Annually', 'Annually'] &&
+             data.purchaseDate is string && data.purchaseDate.size() <= 20 &&
+             data.uid == request.auth.uid &&
+             (!('payoutSchedule' in data) || (data.payoutSchedule is list && data.payoutSchedule.size() <= 200));
+    }
+
+    function isValidCorporateAction(data) {
+      return data.keys().hasAll(['tradeId', 'stockSymbol', 'stockName', 'type', 'date', 'value', 'status', 'uid']) &&
+             data.tradeId is string && data.tradeId.size() <= 128 &&
+             data.stockSymbol is string && data.stockSymbol.size() <= 20 &&
+             data.stockName is string && data.stockName.size() <= 200 &&
+             data.type in ['Dividend', 'Split', 'Bonus', 'Merger'] &&
+             data.date is string && data.date.size() <= 20 &&
+             (data.value is number || data.value is int || data.value is float) && data.value >= 0 &&
+             data.status in ['Detected', 'Applied'] &&
+             data.uid == request.auth.uid;
+    }
+
+    function isValidSIP(data) {
+      return data.keys().hasAll(['stockName', 'stockSymbol', 'installmentAmount', 'startDate', 'dayOfMonth', 'frequency', 'status', 'uid']) &&
+             data.stockName is string && data.stockName.size() <= 200 &&
+             data.stockSymbol is string && data.stockSymbol.size() <= 20 &&
+             (data.installmentAmount is number || data.installmentAmount is int || data.installmentAmount is float) && data.installmentAmount >= 0 &&
+             data.startDate is string && data.startDate.size() <= 20 &&
+             (data.dayOfMonth is number || data.dayOfMonth is int || data.dayOfMonth is float) && data.dayOfMonth >= 1 && data.dayOfMonth <= 31 &&
+             data.frequency == 'Monthly' &&
+             data.status in ['Active', 'Paused', 'Completed'] &&
+             data.uid == request.auth.uid &&
+             (!('lastProcessedDate' in data) || data.lastProcessedDate is string);
+    }
+
+    function isValidPendingScan(data) {
+      return data.keys().hasAll(['extractedData', 'timestamp', 'uid']) &&
+             data.extractedData is list &&
+             data.timestamp is string &&
+             data.uid == request.auth.uid &&
+             (!('deviceName' in data) || data.deviceName is string);
+    }
+
+    function isValidWatchlistItem(data) {
+      return data.keys().hasAll(['symbol', 'name', 'uid', 'addedAt']) &&
+             data.symbol is string && data.symbol.size() <= 30 &&
+             data.name is string && data.name.size() <= 200 &&
+             data.uid == request.auth.uid &&
+             data.addedAt is string &&
+             (!('reasoning' in data) || data.reasoning is string && data.reasoning.size() <= 2000) &&
+             (!('sentiment' in data) || data.sentiment is string) &&
+             (!('priceAtAddition' in data) || data.priceAtAddition is string) &&
+             (!('sector' in data) || data.sector is string) &&
+             (!('convictionScore' in data) || data.convictionScore is number);
+    }
+
+    function isValidHoldingStrategy(data) {
+      return data.keys().hasAll(['name', 'stockSymbols', 'uid', 'createdAt']) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.stockSymbols is list && data.stockSymbols.size() <= 200 &&
+             (data.stockSymbols.size() == 0 || data.stockSymbols[0] is string) &&
+             data.uid == request.auth.uid &&
+             data.createdAt is string &&
+             (!('description' in data) || data.description is string && data.description.size() <= 500) &&
+             (!('targetPercentage' in data) || (data.targetPercentage is number || data.targetPercentage is int || data.targetPercentage is float) && data.targetPercentage >= 0 && data.targetPercentage <= 100) &&
+             (!('color' in data) || data.color is string && data.color.size() <= 200);
+    }
+
+    // 2. Collection Rules
+    match /trades/{tradeId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(tradeId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(tradeId) && isValidTrade(incoming());
+      allow update: if isSignedIn() && isValidId(tradeId) && isValidTrade(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && 
+        incoming().uid == existing().uid && 
+        incoming().stockSymbol == existing().stockSymbol &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'stockName', 'entryDate', 'entryPrice', 'quantity', 'charges', 'interest', 
+          'status', 'exitDate', 'exitPrice', 'type', 'sector', 'marketCap', 
+          'broker', 'targetPrice', 'remarks', 'lastKnownPrice', 
+          'lastPriceUpdate', 'marketCapValue', 'sipId', 'uid', 'stockSymbol',
+          'symbol', 'stock'
+        ])
+      ));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+    match /ledger/{entryId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(entryId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(entryId) && isValidLedger(incoming());
+      allow update: if isSignedIn() && isValidId(entryId) && isValidLedger(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && (
+        incoming().uid == existing().uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['amount', 'date', 'broker', 'type', 'uid'])
+      )));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+    match /dividends/{dividendId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(dividendId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(dividendId) && isValidDividend(incoming());
+      allow update: if isSignedIn() && isValidId(dividendId) && isValidDividend(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && (
+        incoming().uid == existing().uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['stockName', 'month', 'amount', 'date', 'uid'])
+      )));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+    match /bonds/{bondId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(bondId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(bondId) && isValidBond(incoming());
+      allow update: if isSignedIn() && isValidId(bondId) && isValidBond(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && (
+        incoming().uid == existing().uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'principal', 'interestRate', 'frequency', 'purchaseDate', 'maturityDate', 
+          'payoutSchedule', 'status', 'exitDate', 'redemptionAmount', 'lastPayoutDate', 'accruedInterest', 'uid', 'broker'
+        ])
+      )));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+    match /corporateActions/{actionId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(actionId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(actionId) && isValidCorporateAction(incoming()) &&
+                    get(/databases/$(database)/documents/trades/$(incoming().tradeId)).data.uid == request.auth.uid;
+      allow update: if isSignedIn() && isValidId(actionId) && isValidCorporateAction(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && (
+        incoming().uid == existing().uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['status', 'description', 'uid', 'newSymbol', 'newName'])
+      )));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+    match /sips/{sipId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(sipId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(sipId) && isValidSIP(incoming());
+      allow update: if isSignedIn() && isValidId(sipId) && isValidSIP(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && (
+        incoming().uid == existing().uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'installmentAmount', 'dayOfMonth', 'lastProcessedDate', 
+          'stockName', 'stockSymbol', 'startDate', 'frequency', 'sector', 'marketCap', 'broker', 'uid'
+        ])
+      )));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+    match /pendingScans/{scanId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(scanId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(scanId) && isValidPendingScan(incoming());
+      allow update: if isSignedIn() && isValidId(scanId) && isValidPendingScan(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && (
+        incoming().uid == existing().uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['extractedData', 'timestamp', 'uid', 'deviceName'])
+      )));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+    match /watchlist/{itemId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(itemId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(itemId) && isValidWatchlistItem(incoming());
+      allow update: if isSignedIn() && isValidId(itemId) && isValidWatchlistItem(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && (
+        incoming().uid == existing().uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['symbol', 'name', 'sector', 'priceAtAddition', 'reasoning', 'sentiment', 'convictionScore', 'addedAt', 'uid'])
+      )));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+
+    match /strategies/{strategyId} {
+      allow get: if isSignedIn() && (isAdmin() || (isValidId(strategyId) && existing().uid == request.auth.uid));
+      allow list: if isSignedIn() && (isAdmin() || existing().uid == request.auth.uid);
+      allow create: if isSignedIn() && isValidId(strategyId) && isValidHoldingStrategy(incoming());
+      allow update: if isSignedIn() && isValidId(strategyId) && isValidHoldingStrategy(incoming()) && (isAdmin() || (existing().uid == request.auth.uid && (
+        incoming().uid == existing().uid &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'targetPercentage', 'color', 'stockSymbols', 'createdAt', 'uid'])
+      )));
+      allow delete: if isSignedIn() && (isAdmin() || (resource != null && resource.data.get('uid', '') == request.auth.uid));
+    }
+
+    // 3. Test Collection
+    match /test/{docId} {
+      allow read: if true;
+    }
+  }
+}

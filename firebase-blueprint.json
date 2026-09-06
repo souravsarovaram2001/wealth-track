@@ -1,0 +1,204 @@
+{
+  "entities": {
+    "Trade": {
+      "title": "Trade",
+      "description": "A stock trade record",
+      "type": "object",
+      "properties": {
+        "stockName": { "type": "string" },
+        "stockSymbol": { "type": "string" },
+        "entryDate": { "type": "string", "format": "date" },
+        "entryPrice": { "type": "number" },
+        "quantity": { "type": "number" },
+        "charges": { "type": "number" },
+        "interest": { "type": "number" },
+        "exitDate": { "type": "string", "format": "date" },
+        "exitPrice": { "type": "number" },
+        "status": { "type": "string", "enum": ["Active", "Sold"] },
+        "type": { "type": "string", "enum": ["Stock", "Mutual Fund", "ETF"] },
+        "sector": { "type": "string" },
+        "marketCap": { "type": "string", "enum": ["Smallcap", "Midcap", "Largecap", "N/A"] },
+        "broker": { "type": "string", "enum": ["Zerodha", "Zerodha Coin", "Upstox", "Fyers", "Angel One", "Groww", "ICICI Direct", "HDFC Securities", "Kotak Securities"] },
+        "targetPrice": { "type": "number" },
+        "uid": { "type": "string" },
+        "remarks": { "type": "string" }
+      },
+      "required": ["stockName", "entryDate", "entryPrice", "quantity", "status", "uid"]
+    },
+    "LedgerEntry": {
+      "title": "Ledger Entry",
+      "description": "A cash flow record",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "format": "date" },
+        "broker": { "type": "string", "enum": ["Zerodha", "Zerodha Coin", "Upstox", "Fyers", "Angel One", "Groww", "ICICI Direct", "HDFC Securities", "Kotak Securities"] },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["Deposit", "Withdrawal"] },
+        "uid": { "type": "string" }
+      },
+      "required": ["date", "broker", "amount", "type", "uid"]
+    },
+    "Dividend": {
+      "title": "Dividend",
+      "description": "A dividend payout record",
+      "type": "object",
+      "properties": {
+        "stockName": { "type": "string" },
+        "month": { "type": "string" },
+        "amount": { "type": "number" },
+        "uid": { "type": "string" }
+      },
+      "required": ["stockName", "month", "amount", "uid"]
+    },
+    "Bond": {
+      "title": "Bond",
+      "description": "A bond investment record",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "principal": { "type": "number" },
+        "interestRate": { "type": "number" },
+        "frequency": { "type": "string", "enum": ["Monthly", "Quarterly", "Semi-Annually", "Annually"] },
+        "purchaseDate": { "type": "string", "format": "date" },
+        "maturityDate": { "type": "string", "format": "date" },
+        "payoutSchedule": { 
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "date": { "type": "string", "format": "date" },
+              "amount": { "type": "number" },
+              "status": { "type": "string", "enum": ["Pending", "Received"] }
+            }
+          }
+        },
+        "status": { "type": "string", "enum": ["Active", "Exited"] },
+        "exitDate": { "type": "string", "format": "date" },
+        "redemptionAmount": { "type": "number" },
+        "uid": { "type": "string" }
+      },
+      "required": ["name", "principal", "interestRate", "frequency", "purchaseDate", "uid"]
+    },
+    "CorporateAction": {
+      "title": "Corporate Action",
+      "description": "A detected corporate action record",
+      "type": "object",
+      "properties": {
+        "tradeId": { "type": "string" },
+        "stockSymbol": { "type": "string" },
+        "stockName": { "type": "string" },
+        "type": { "type": "string", "enum": ["Dividend", "Split", "Bonus", "Merger"] },
+        "date": { "type": "string", "format": "date" },
+        "value": { "type": "number" },
+        "ratio": { "type": "string" },
+        "status": { "type": "string", "enum": ["Detected", "Applied"] },
+        "description": { "type": "string" },
+        "uid": { "type": "string" }
+      },
+      "required": ["tradeId", "stockSymbol", "stockName", "type", "date", "value", "status", "uid"]
+    },
+    "SIP": {
+      "title": "SIP",
+      "description": "A Systematic Investment Plan record",
+      "type": "object",
+      "properties": {
+        "stockName": { "type": "string" },
+        "stockSymbol": { "type": "string" },
+        "installmentAmount": { "type": "number" },
+        "startDate": { "type": "string", "format": "date" },
+        "dayOfMonth": { "type": "number" },
+        "frequency": { "type": "string", "enum": ["Monthly"] },
+        "status": { "type": "string", "enum": ["Active", "Paused", "Completed"] },
+        "lastProcessedDate": { "type": "string", "format": "date" },
+        "uid": { "type": "string" }
+      },
+      "required": ["stockName", "stockSymbol", "installmentAmount", "startDate", "dayOfMonth", "frequency", "status", "uid"]
+    },
+    "PendingScan": {
+      "title": "Pending Scan",
+      "description": "A scan result waiting for confirmation",
+      "type": "object",
+      "properties": {
+        "extractedData": { "type": "array" },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "uid": { "type": "string" },
+        "deviceName": { "type": "string" }
+      },
+      "required": ["extractedData", "timestamp", "uid"]
+    },
+    "WatchlistItem": {
+      "title": "Watchlist Item",
+      "description": "A stock saved for observation",
+      "type": "object",
+      "properties": {
+        "symbol": { "type": "string" },
+        "name": { "type": "string" },
+        "sector": { "type": "string" },
+        "priceAtAddition": { "type": "string" },
+        "reasoning": { "type": "string" },
+        "sentiment": { "type": "string" },
+        "convictionScore": { "type": "number" },
+        "addedAt": { "type": "string", "format": "date-time" },
+        "uid": { "type": "string" }
+      },
+      "required": ["symbol", "name", "uid", "addedAt"]
+    },
+    "HoldingStrategy": {
+      "title": "Holding Strategy",
+      "description": "A user-defined strategy for grouping holdings",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "targetPercentage": { "type": "number" },
+        "color": { "type": "string", "maxLength": 30 },
+        "stockSymbols": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 50 }
+        },
+        "createdAt": { "type": "string" },
+        "uid": { "type": "string" }
+      },
+      "required": ["name", "stockSymbols", "uid", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/trades/{tradeId}": {
+      "schema": "Trade",
+      "description": "Collection of stock trades"
+    },
+    "/ledger/{entryId}": {
+      "schema": "LedgerEntry",
+      "description": "Collection of cash flow entries"
+    },
+    "/dividends/{dividendId}": {
+      "schema": "Dividend",
+      "description": "Collection of dividend records"
+    },
+    "/bonds/{bondId}": {
+      "schema": "Bond",
+      "description": "Collection of bond records"
+    },
+    "/corporateActions/{actionId}": {
+      "schema": "CorporateAction",
+      "description": "Collection of detected corporate actions"
+    },
+    "/sips/{sipId}": {
+      "schema": "SIP",
+      "description": "Collection of SIP records"
+    },
+    "/pendingScans/{scanId}": {
+      "schema": "PendingScan",
+      "description": "Collection of pending scan results"
+    },
+    "/watchlist/{itemId}": {
+      "schema": "WatchlistItem",
+      "description": "Collection of watched stocks"
+    },
+    "/strategies/{strategyId}": {
+      "schema": "HoldingStrategy",
+      "description": "Collection of holding strategies"
+    }
+  }
+}
