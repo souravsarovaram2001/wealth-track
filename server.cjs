@@ -518,48 +518,12 @@ async function startServer() {
     }
     console.log(`[/api/prices] START: Fetching ${symbolsToFetch.length} symbols: ${symbolsToFetch.map((s) => s.symbol).join(", ")}`);
     try {
-      const mfSymbols = symbolsToFetch.filter((s) => s.type === "Mutual Fund" && /^\d+$/.test(s.symbol));
-      const yahooSymbols = symbolsToFetch.filter((s) => s.type !== "Mutual Fund" || !/^\d+$/.test(s.symbol));
-      console.log(`[/api/prices] MF: ${mfSymbols.length}, Yahoo: ${yahooSymbols.length}`);
-      const MF_CHUNK_SIZE = 3;
-      for (let i = 0; i < mfSymbols.length; i += MF_CHUNK_SIZE) {
-        const chunk = mfSymbols.slice(i, i + MF_CHUNK_SIZE);
-        await Promise.all(chunk.map(async (item) => {
-          try {
-            let mfRes;
-            try {
-              mfRes = await import_axios.default.get(`https://api.mfapi.in/mf/${item.symbol}/latest`, { timeout: 15e3 });
-            } catch (e1) {
-              mfRes = await import_axios.default.get(`https://api.mfapi.in/mf/${item.symbol}`, { timeout: 15e3 });
-            }
-            if (mfRes.data) {
-              let latestNav = null;
-              if (mfRes.data.status === "SUCCESS" && mfRes.data.data && mfRes.data.data.length > 0) {
-                latestNav = mfRes.data.data[0].nav;
-              } else if (mfRes.data.data && mfRes.data.data.length > 0) {
-                latestNav = mfRes.data.data[0].nav;
-              }
-              if (latestNav) {
-                const price = parseFloat(latestNav);
-                if (!isNaN(price) && price > 0) {
-                  results[item.symbol] = { price, marketCap: 0 };
-                  priceCache.set(item.symbol, { price, marketCap: 0, timestamp: now });
-                  return;
-                }
-              }
-            }
-          } catch (err) {
-            console.warn(`[MFAPI] Fetch notice for ${item.symbol}: ${err.message}`);
-          }
-          const cached = priceCache.get(item.symbol);
-          if (cached) {
-            results[item.symbol] = { price: cached.price, marketCap: cached.marketCap };
-          }
-        }));
-        if (i + MF_CHUNK_SIZE < mfSymbols.length) {
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-      }
+      const mfSymbols = symbolsToFetch.filter((s) => s.type === "Mutual Fund");
+      const yahooSymbols = symbolsToFetch.filter((s) => s.type !== "Mutual Fund");
+      console.log(`[/api/prices] MF (Ignored NAV updates): ${mfSymbols.length}, Yahoo: ${yahooSymbols.length}`);
+      mfSymbols.forEach((item) => {
+        results[item.symbol] = { price: 0, marketCap: 0, isMutualFund: true };
+      });
       if (yahooSymbols.length > 0) {
         const yahooQueries = yahooSymbols.map((s) => {
           if ((s.type === "Stock" || s.type === "ETF") && !s.symbol.includes(".") && !s.symbol.includes(":")) {
