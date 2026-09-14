@@ -622,57 +622,16 @@ app.post('/api/prices', async (req, res) => {
   console.log(`[/api/prices] START: Fetching ${symbolsToFetch.length} symbols: ${symbolsToFetch.map(s => s.symbol).join(', ')}`);
 
   try {
-    // Separate Mutual Funds (MFAPI) and Stocks/ETFs (Yahoo)
-    const mfSymbols = symbolsToFetch.filter(s => s.type === 'Mutual Fund' && /^\d+$/.test(s.symbol));
-    const yahooSymbols = symbolsToFetch.filter(s => s.type !== 'Mutual Fund' || !/^\d+$/.test(s.symbol));
+    // Assets categorized under Mutual Funds ignore real-time NAV updates and unit-price market syncs (Invested-only tracking)
+    const mfSymbols = symbolsToFetch.filter(s => s.type === 'Mutual Fund');
+    const yahooSymbols = symbolsToFetch.filter(s => s.type !== 'Mutual Fund');
 
-    console.log(`[/api/prices] MF: ${mfSymbols.length}, Yahoo: ${yahooSymbols.length}`);
+    console.log(`[/api/prices] MF (Ignored NAV updates): ${mfSymbols.length}, Yahoo: ${yahooSymbols.length}`);
 
-    // 1. Process Mutual Funds in small chunks to avoid MFAPI rate limits
-    const MF_CHUNK_SIZE = 3;
-    for (let i = 0; i < mfSymbols.length; i += MF_CHUNK_SIZE) {
-      const chunk = mfSymbols.slice(i, i + MF_CHUNK_SIZE);
-      await Promise.all(chunk.map(async (item) => {
-        try {
-          let mfRes;
-          try {
-            mfRes = await axios.get(`https://api.mfapi.in/mf/${item.symbol}/latest`, { timeout: 15000 });
-          } catch (e1) {
-            // Retry with full endpoint if latest timed out
-            mfRes = await axios.get(`https://api.mfapi.in/mf/${item.symbol}`, { timeout: 15000 });
-          }
-
-          if (mfRes.data) {
-            let latestNav: string | null = null;
-            if (mfRes.data.status === 'SUCCESS' && mfRes.data.data && mfRes.data.data.length > 0) {
-              latestNav = mfRes.data.data[0].nav;
-            } else if (mfRes.data.data && mfRes.data.data.length > 0) {
-              latestNav = mfRes.data.data[0].nav;
-            }
-
-            if (latestNav) {
-              const price = parseFloat(latestNav);
-              if (!isNaN(price) && price > 0) {
-                results[item.symbol] = { price, marketCap: 0 };
-                priceCache.set(item.symbol, { price, marketCap: 0, timestamp: now });
-                return;
-              }
-            }
-          }
-        } catch (err) {
-          console.warn(`[MFAPI] Fetch notice for ${item.symbol}: ${(err as any).message}`);
-        }
-
-        // Fallback to stale cached price if available
-        const cached = priceCache.get(item.symbol);
-        if (cached) {
-          results[item.symbol] = { price: cached.price, marketCap: cached.marketCap };
-        }
-      }));
-      if (i + MF_CHUNK_SIZE < mfSymbols.length) {
-        await new Promise(resolve => setTimeout(resolve, 500));
-      }
-    }
+    // Mutual funds: Ignore real-time NAV / unit-price syncs
+    mfSymbols.forEach(item => {
+      results[item.symbol] = { price: 0, marketCap: 0, isMutualFund: true };
+    });
 
     // 2. Process Stocks/ETFs with Yahoo Finance
     // Batch quotes is much more efficient than individual calls

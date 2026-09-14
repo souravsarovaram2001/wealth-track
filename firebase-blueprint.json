@@ -20,6 +20,7 @@
         "marketCap": { "type": "string", "enum": ["Smallcap", "Midcap", "Largecap", "N/A"] },
         "broker": { "type": "string", "enum": ["Zerodha", "Zerodha Coin", "Upstox", "Fyers", "Angel One", "Groww", "ICICI Direct", "HDFC Securities", "Kotak Securities"] },
         "targetPrice": { "type": "number" },
+        "total_invested_amount": { "type": "number" },
         "uid": { "type": "string" },
         "remarks": { "type": "string" }
       },

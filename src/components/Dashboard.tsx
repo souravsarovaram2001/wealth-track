@@ -177,7 +177,7 @@ export function Dashboard({
     return holdings;
   }, [processedPortfolio, bonds]);
 
-  const unrealizedProfit = combinedHoldings.reduce((acc, t) => acc + (t.currentValue - t.investment), 0);
+  const unrealizedProfit = combinedHoldings.filter(t => t.type !== 'Mutual Fund').reduce((acc, t) => acc + (t.currentValue - t.investment), 0);
 
   // Sector distribution
   const sectorData = useMemo(() => {
@@ -302,8 +302,8 @@ export function Dashboard({
   };
 
   const fyStats = useMemo(() => {
-    // Trades realized in current FY
-    const fyRealizedTrades = trades.filter(t => t.status === 'Sold' && getFY(t.exitDate!) === currentFY);
+    // Trades realized in current FY (excluding Mutual Funds)
+    const fyRealizedTrades = trades.filter(t => t.status === 'Sold' && t.type !== 'Mutual Fund' && getFY(t.exitDate!) === currentFY);
     const tradeRealized = fyRealizedTrades.reduce((acc, t) => acc + (t.exitPrice! - t.entryPrice) * t.quantity - (t.charges || 0) - (t.interest || 0), 0);
     
     // Dividends in current FY

@@ -718,6 +718,9 @@ export function TradeForm({ onSubmit, initialData }: TradeFormProps) {
         quantity,
         charges: parseFloat(formData.charges) || 0,
         interest: parseFloat(formData.interest) || 0,
+        total_invested_amount: formData.type === 'Mutual Fund' 
+          ? ((entryPrice * quantity) + (parseFloat(formData.charges) || 0) + (parseFloat(formData.interest) || 0))
+          : undefined,
         status: 'Active',
         sector: formData.type === 'Mutual Fund' ? 'Mutual Fund' : (formData.type === 'ETF' ? 'ETF' : formData.sector),
         marketCap: formData.type === 'Mutual Fund' ? 'N/A' : (formData.marketCap as MarketCap),

@@ -52,6 +52,7 @@ export interface Trade {
   targetPrice: number;
   lastKnownPrice?: number;
   lastPriceUpdate?: string;
+  total_invested_amount?: number;
   beta?: number;
   uid?: string;
   remarks?: string;
@@ -132,6 +133,7 @@ export interface ProcessedPortfolioEntry {
   quantity: number;
   entryPrice: number;
   investment: number;
+  total_invested_amount?: number;
   currentPrice: number;
   currentValue: number;
   sector: string;

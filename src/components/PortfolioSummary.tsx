@@ -478,50 +478,58 @@ export function PortfolioSummary({
         .filter(d => d.stockName.toLowerCase() === data.name.toLowerCase() || d.stockName.toLowerCase() === symbol.toLowerCase())
         .reduce((sum, d) => sum + d.amount, 0);
         
-      const unrealizedPnL = data.currentValue - data.investment;
-      const totalPnL = unrealizedPnL + stockDividends;
-      const pnlPercentage = data.investment > 0 ? (totalPnL / data.investment) * 100 : 0;
+      const isMF = data.type === 'Mutual Fund';
+      // For Mutual Funds: Force current_value to equal invested_amount
+      const currentValue = isMF ? data.investment : data.currentValue;
+      // For Mutual Funds: Set unrealized_pnl = 0 and unrealized_pnl_percentage = 0.00%
+      const unrealizedPnL = isMF ? 0 : (currentValue - data.investment);
+      const totalPnL = isMF ? 0 : (unrealizedPnL + stockDividends);
+      const pnlPercentage = isMF ? 0 : (data.investment > 0 ? (totalPnL / data.investment) * 100 : 0);
       
       const currentPriceRaw = currentPrices[symbol];
       const symbolTrade = trades.find(t => t.stockSymbol === symbol && t.status === 'Active');
-      const currentPrice = (currentPriceRaw !== undefined && currentPriceRaw > 0) 
-        ? currentPriceRaw 
-        : (symbolTrade?.lastKnownPrice || 0);
+      const currentPrice = isMF 
+        ? (data.qty > 0 ? data.investment / data.qty : 0)
+        : ((currentPriceRaw !== undefined && currentPriceRaw > 0) 
+            ? currentPriceRaw 
+            : (symbolTrade?.lastKnownPrice || 0));
 
-      // Calculate XIRR for this specific asset
+      // Calculate XIRR for this specific asset (suppress for Mutual Funds as invested-only tracking)
       const stockFlows: { amount: number; date: string }[] = [];
-      
-      const allTradesForSymbol = trades.filter(t => t.stockSymbol === symbol);
-      
-      allTradesForSymbol.forEach(t => {
-          const investment = (t.entryPrice * t.quantity) + (t.charges || 0) + (t.interest || 0);
-          stockFlows.push({ amount: -investment, date: t.entryDate });
-          
-          if (t.status === 'Sold' && t.exitPrice && t.exitDate) {
-            const realization = t.exitPrice * t.quantity;
-            stockFlows.push({ amount: realization, date: t.exitDate });
-          }
-        });
-
-        dividends.filter(d => d.stockName.toLowerCase() === data.name.toLowerCase() || d.stockName.toLowerCase() === symbol.toLowerCase()).forEach(d => {
-          const divDate = d.date || `${d.month}-01`;
-          stockFlows.push({ amount: d.amount, date: divDate });
-        });
-
-        if (data.qty > 0) {
-          stockFlows.push({ 
-            amount: data.currentValue, 
-            date: new Date().toISOString().split('T')[0] 
-          });
-        }
-      
       let xirr = null;
-      try {
-        if (stockFlows.length >= 2) {
-          xirr = calculateXIRR(stockFlows);
+
+      if (!isMF) {
+        const allTradesForSymbol = trades.filter(t => t.stockSymbol === symbol);
+        
+        allTradesForSymbol.forEach(t => {
+            const investment = (t.entryPrice * t.quantity) + (t.charges || 0) + (t.interest || 0);
+            stockFlows.push({ amount: -investment, date: t.entryDate });
+            
+            if (t.status === 'Sold' && t.exitPrice && t.exitDate) {
+              const realization = t.exitPrice * t.quantity;
+              stockFlows.push({ amount: realization, date: t.exitDate });
+            }
+          });
+
+          dividends.filter(d => d.stockName.toLowerCase() === data.name.toLowerCase() || d.stockName.toLowerCase() === symbol.toLowerCase()).forEach(d => {
+            const divDate = d.date || `${d.month}-01`;
+            stockFlows.push({ amount: d.amount, date: divDate });
+          });
+
+          if (data.qty > 0) {
+            stockFlows.push({ 
+              amount: currentValue, 
+              date: new Date().toISOString().split('T')[0] 
+            });
+          }
+        
+        try {
+          if (stockFlows.length >= 2) {
+            xirr = calculateXIRR(stockFlows);
+          }
+        } catch (e) {
+          // Silently fail XIRR
         }
-      } catch (e) {
-        // Silently fail XIRR
       }
 
       summaries.push({
@@ -532,9 +540,9 @@ export function PortfolioSummary({
         totalInvestment: data.investment,
         avgPrice: data.qty > 0 ? data.investment / data.qty : 0,
         currentPrice,
-        currentValue: data.currentValue,
+        currentValue,
         unrealizedPnL,
-        totalDividends: stockDividends,
+        totalDividends: isMF ? 0 : stockDividends,
         totalPnL,
         pnlPercentage,
         sector: data.sector,
@@ -630,6 +638,7 @@ export function PortfolioSummary({
     let globalLtcg = 0;
     let globalStcg = 0;
     globalHoldings.forEach(item => {
+      if (item.type === 'Mutual Fund') return; // Invested-only tracking, no PnL variance
       const days = differenceInDays(new Date(), new Date(item.entryDate));
       if (days >= 365) globalLtcg += (Number(item.pnl) || 0);
       else globalStcg += (Number(item.pnl) || 0);
@@ -687,6 +696,7 @@ export function PortfolioSummary({
     let filteredLtcg = 0;
     let filteredStcg = 0;
     processedPortfolio.forEach(item => {
+      if (item.type === 'Mutual Fund') return; // Invested-only tracking, no PnL variance
       if (activeNonBondSymbols.has(item.symbol)) {
         const days = differenceInDays(new Date(), new Date(item.entryDate));
         if (days >= 365) filteredLtcg += (Number(item.pnl) || 0);
@@ -1110,44 +1120,70 @@ export function PortfolioSummary({
                             <TableCell className="text-right font-mono text-sm">
                               <div className="flex flex-col items-end font-bold">
                                 <span>₹{s.totalInvestment.toLocaleString()}</span>
-                                <span className="sm:hidden text-[10px] font-normal text-muted-foreground">Val: ₹{s.currentValue.toLocaleString()}</span>
+                                <span className="sm:hidden text-[10px] font-normal text-muted-foreground">
+                                  {s.type === 'Mutual Fund' ? 'Invested-Only' : `Val: ₹${s.currentValue.toLocaleString()}`}
+                                </span>
                               </div>
                             </TableCell>
                             <TableCell className="text-right font-mono text-sm hidden sm:table-cell">
                               <div className="flex flex-col items-end">
-                                <span className="font-bold">₹{s.currentValue.toLocaleString()}</span>
-                                <span className="text-[10px] text-muted-foreground">@ ₹{s.currentPrice.toLocaleString()}</span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className={`flex flex-col items-end ${s.unrealizedPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                <span className="font-bold text-xs sm:text-sm">
-                                  {s.unrealizedPnL >= 0 ? '+' : ''}₹{s.unrealizedPnL.toLocaleString()}
-                                </span>
-                                {s.totalDividends > 0 && (
-                                  <span className="text-[8px] text-blue-600 font-bold">
-                                    +₹{s.totalDividends.toLocaleString()} Div.
-                                  </span>
+                                <span className="font-bold">₹{s.totalInvestment.toLocaleString()}</span>
+                                {s.type === 'Mutual Fund' ? (
+                                  <span className="text-[10px] text-muted-foreground">Invested-Only</span>
+                                ) : (
+                                  <span className="text-[10px] text-muted-foreground">@ ₹{s.currentPrice.toLocaleString()}</span>
                                 )}
                               </div>
                             </TableCell>
                             <TableCell className="text-right">
-                              <div className={`flex flex-col items-end ${s.pnlPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                <span className="font-bold text-xs sm:text-sm">
-                                  {s.pnlPercentage >= 0 ? '+' : ''}{s.pnlPercentage.toFixed(2)}%
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              {s.xirr !== null && s.xirr !== undefined && !isNaN(s.xirr) ? (
+                              {s.type === 'Mutual Fund' ? (
                                 <div className="flex flex-col items-end">
-                                  <span className={`font-bold text-xs sm:text-sm ${s.xirr >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
-                                    {formatXIRR(s.xirr)}
+                                  <span className="font-mono text-xs sm:text-sm text-muted-foreground font-semibold">
+                                    ₹0.00
                                   </span>
-                                  <span className="text-[8px] font-bold text-muted-foreground uppercase">XIRR</span>
                                 </div>
                               ) : (
-                                <span className="text-xs text-muted-foreground">--</span>
+                                <div className={`flex flex-col items-end ${s.unrealizedPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  <span className="font-bold text-xs sm:text-sm">
+                                    {s.unrealizedPnL >= 0 ? '+' : ''}₹{s.unrealizedPnL.toLocaleString()}
+                                  </span>
+                                  {s.totalDividends > 0 && (
+                                    <span className="text-[8px] text-blue-600 font-bold">
+                                      +₹{s.totalDividends.toLocaleString()} Div.
+                                    </span>
+                                  )}
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {s.type === 'Mutual Fund' ? (
+                                <div className="flex flex-col items-end">
+                                  <Badge variant="outline" className="text-[9px] font-mono text-muted-foreground border-muted px-1.5 py-0 h-5">
+                                    0.00%
+                                  </Badge>
+                                </div>
+                              ) : (
+                                <div className={`flex flex-col items-end ${s.pnlPercentage >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                  <span className="font-bold text-xs sm:text-sm">
+                                    {s.pnlPercentage >= 0 ? '+' : ''}{s.pnlPercentage.toFixed(2)}%
+                                  </span>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              {s.type === 'Mutual Fund' ? (
+                                <span className="text-xs text-muted-foreground font-mono">--</span>
+                              ) : (
+                                s.xirr !== null && s.xirr !== undefined && !isNaN(s.xirr) ? (
+                                  <div className="flex flex-col items-end">
+                                    <span className={`font-bold text-xs sm:text-sm ${s.xirr >= 0 ? 'text-blue-600' : 'text-orange-600'}`}>
+                                      {formatXIRR(s.xirr)}
+                                    </span>
+                                    <span className="text-[8px] font-bold text-muted-foreground uppercase">XIRR</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-xs text-muted-foreground">--</span>
+                                )
                               )}
                             </TableCell>
                             <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
@@ -1247,8 +1283,9 @@ export function PortfolioSummary({
                                           .sort((a, b) => new Date(a.entryDate).getTime() - new Date(b.entryDate).getTime())
                                           .map(lot => {
                                             const days = differenceInDays(new Date(), new Date(lot.entryDate));
+                                            const isMF = s.type === 'Mutual Fund';
                                             const lotBasis = (lot.entryPrice * lot.quantity) + (lot.charges || 0) + (lot.interest || 0);
-                                            const lotPnL = ((currentPrices[s.symbol] || s.currentPrice) * lot.quantity) - lotBasis;
+                                            const lotPnL = isMF ? 0 : (((currentPrices[s.symbol] || s.currentPrice) * lot.quantity) - lotBasis);
                                             return (
                                               <TableRow key={lot.id} className="hover:bg-primary/[0.02] border-none group/lot">
                                                 <TableCell className="py-2 px-4">
@@ -1268,13 +1305,19 @@ export function PortfolioSummary({
                                                     <span className="text-[9px] text-muted-foreground opacity-70">@ ₹{lot.entryPrice.toLocaleString()}</span>
                                                   </div>
                                                 </TableCell>
-                                                <TableCell className={`py-2 text-right font-mono text-[11px] font-bold ${lotPnL >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                                                  {lotPnL >= 0 ? '+' : ''}{lotPnL.toLocaleString()}
+                                                <TableCell className={`py-2 text-right font-mono text-[11px] font-bold ${isMF ? 'text-muted-foreground' : (lotPnL >= 0 ? 'text-green-600' : 'text-red-600')}`}>
+                                                  {isMF ? '₹0.00' : `${lotPnL >= 0 ? '+' : ''}₹${lotPnL.toLocaleString()}`}
                                                 </TableCell>
                                                 <TableCell className="py-2 text-right px-4">
-                                                  <Badge variant={days >= 365 ? "default" : "secondary"} className={`text-[8px] font-black h-4 px-1 ${days >= 365 ? 'bg-blue-600' : 'opacity-60'}`}>
-                                                    {days >= 365 ? 'LTCG' : 'STCG'}
-                                                  </Badge>
+                                                  {isMF ? (
+                                                    <Badge variant="outline" className="text-[8px] font-bold h-4 px-1 text-muted-foreground">
+                                                      Invested
+                                                    </Badge>
+                                                  ) : (
+                                                    <Badge variant={days >= 365 ? "default" : "secondary"} className={`text-[8px] font-black h-4 px-1 ${days >= 365 ? 'bg-blue-600' : 'opacity-60'}`}>
+                                                      {days >= 365 ? 'LTCG' : 'STCG'}
+                                                    </Badge>
+                                                  )}
                                                 </TableCell>
                                               </TableRow>
                                             )

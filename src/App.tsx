@@ -136,7 +136,7 @@ export default function App() {
     
     lastFetchRef.current = now;
     isFetchingRef.current = true;
-    const tradesToFetch = specificTrades || tradesRef.current.filter(t => t.status === 'Active' || t.status === 'Pending Link');
+    const tradesToFetch = (specificTrades || tradesRef.current.filter(t => t.status === 'Active' || t.status === 'Pending Link')).filter(t => t.type !== 'Mutual Fund');
     
     // Group by unique symbol and type to avoid redundant calls
     const uniqueAssets = Array.from(new Set(tradesToFetch.map(t => `${t.stockSymbol}|${t.type || 'Stock'}|${t.stockName}`)))
@@ -530,16 +530,22 @@ export default function App() {
     const holdings: ProcessedPortfolioEntry[] = [];
     
     activeTrades.forEach(t => {
+      const isMF = t.type === 'Mutual Fund';
       const live = currentPrices[t.stockSymbol];
       // User requested: Do not set Current Price = Buy Price if live price is missing.
       // Keep it as null or 0 until API returns a value.
-      const currentPrice = (live && live > 0) ? live : (t.lastKnownPrice && t.lastKnownPrice > 0 ? t.lastKnownPrice : 0);
+      // For Mutual Funds: Invested-only tracking. Ignore real-time NAV and market syncs.
+      const currentPrice = isMF
+        ? (Number(t.entryPrice) || 0)
+        : ((live && live > 0) ? live : (t.lastKnownPrice && t.lastKnownPrice > 0 ? t.lastKnownPrice : 0));
       
       const investment = (Number(t.entryPrice) * Number(t.quantity)) + (Number(t.charges) || 0) + (Number(t.interest) || 0);
-      const currentValue = Number(currentPrice) * Number(t.quantity);
+      // For Mutual Funds: Force current_value to equal invested_amount
+      const currentValue = isMF ? investment : (Number(currentPrice) * Number(t.quantity));
       const isSIP = !!t.sipId || sips.some(s => s.stockSymbol === t.stockSymbol);
       
-      const pnl = currentValue - investment;
+      // For Mutual Funds: Set unrealized_pnl = 0 and unrealized_pnl_percentage = 0.00%
+      const pnl = isMF ? 0 : (currentValue - investment);
       holdings.push({
         id: t.id!,
         symbol: t.stockSymbol,
@@ -548,13 +554,14 @@ export default function App() {
         quantity: Number(t.quantity) || 0,
         entryPrice: Number(t.entryPrice) || 0,
         investment: isNaN(investment) ? 0 : investment,
+        total_invested_amount: isNaN(investment) ? 0 : investment,
         currentPrice: isNaN(currentPrice) ? 0 : currentPrice,
         currentValue: isNaN(currentValue) ? 0 : currentValue,
         sector: t.type === 'Mutual Fund' ? 'Mutual Fund' : (t.type === 'ETF' ? 'ETF' : formatSector(t.stockSymbol, t.sector)),
         marketCap: t.type === 'Mutual Fund' || t.type === 'ETF' ? 'N/A' : getMarketCapCategory(t.stockSymbol, t.marketCapValue, t.marketCap),
         isSIP,
         pnl: isNaN(pnl) ? 0 : pnl,
-        pnlPercent: investment > 0 ? (pnl / investment) * 100 : 0,
+        pnlPercent: isMF ? 0 : (investment > 0 ? (pnl / investment) * 100 : 0),
         entryDate: t.entryDate
       });
     });
@@ -901,6 +908,7 @@ export default function App() {
             quantity: installmentAmount / bestMatch.price,
             charges: 0,
             interest: 0,
+            total_invested_amount: installmentAmount,
             status: 'Active',
             sector: sip.type === 'ETF' ? 'ETF' : 'Mutual Fund',
             marketCap: 'N/A',
@@ -948,6 +956,7 @@ export default function App() {
                  quantity: data.initialInvestment / res.data.price,
                  charges: 0,
                  interest: 0,
+                 total_invested_amount: data.initialInvestment,
                  status: 'Active',
                  sector: data.type === 'ETF' ? 'ETF' : 'Mutual Fund',
                  marketCap: 'N/A',
